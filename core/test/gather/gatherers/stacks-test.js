@@ -5,7 +5,8 @@
  */
 
 import StacksGatherer from '../../../gather/gatherers/stacks.js';
-import {fnAny} from '../../test-utils.js';
+import {fnAny, readJson} from '../../test-utils.js';
+const lrRequestDevtoolsLog = readJson('../../fixtures/lr.devtoolslog.json', import.meta);
 
 describe('StacksGatherer', () => {
   /** @type {{executionContext: {evaluate: Mock<any, any>}}} */
@@ -24,10 +25,11 @@ describe('StacksGatherer', () => {
 
     /** @type {*} */
     const executionContext = driver.executionContext;
-    expect(await StacksGatherer.collectStacks(executionContext)).toEqual([
+    expect(await StacksGatherer.collectStacks(executionContext, lrRequestDevtoolsLog)).toEqual([
       {detector: 'js', id: 'jquery', name: 'jQuery', npm: 'jquery', version: '2.1.0'},
       {detector: 'js', id: 'angular', name: 'Angular', npm: undefined, version: undefined},
       {detector: 'js', id: 'magento', name: 'Magento', npm: undefined, version: '2'},
+      {detector: 'server', id: 'cloudflare', name: 'Cloudflare'},
     ]);
   });
 });
