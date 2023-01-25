@@ -17,7 +17,7 @@ import {createRequire} from 'module';
 import log from 'lighthouse-logger';
 
 import FRGatherer from '../base-gatherer.js';
-
+import DevtoolsLog from './devtools-log.js';
 
 // This is removed by rollup, because the only usage is to resolve a module path
 // but that is replaced by the inline-fs plugin, leaving `require` unused.
@@ -84,23 +84,68 @@ async function detectLibraries() {
 }
 /* c8 ignore stop */
 
+/**
+ * @param {LH.Crdp.Network.Headers} headers
+ * @return {LH.Artifacts.DetectedStack | undefined}
+ */
+function detectServer(headers) {
+  const documentHeaders = Object.fromEntries(
+    Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value.toLowerCase()])
+  );
+  const SERVERS = [
+    {id: 'akamai', name: 'Akamai', headers: {'x-akamai-transformed': ''}},
+    {id: 'apache', name: 'Apache', headers: {server: 'apache'}},
+    {id: 'cloudflare', name: 'Cloudflare', headers: {server: 'cloudflare'}},
+    {id: 'litespeed', name: 'LiteSpeed', headers: {server: 'litespeed'}},
+    {id: 'microsoft-iis', name: 'Microsoft IIS', headers: {server: 'microsoft-iis'}},
+    {id: 'nginx', name: 'Nginx', headers: {server: 'nginx'}},
+    {id: 'openresty', name: 'OpenResty', headers: {server: 'openresty'}},
+    {id: 'squarespace', name: 'Squarespace', headers: {server: 'squarespace'}},
+    {id: 'vercel', name: 'Vercel', headers: {server: 'vercel'}},
+    {id: 'wix', name: 'WIX', headers: {'x-wix-request-id': ''}},
+  ];
+  for (const server of SERVERS) {
+    const matched = Object.entries(server.headers).some(([header, value]) =>
+       documentHeaders[header] && documentHeaders[header].startsWith(value)
+    );
+    if (matched) {
+      return {
+        detector: 'server',
+        id: server.id,
+        name: server.name,
+      };
+    }
+  }
+}
+
 
 /** @implements {LH.Gatherer.FRGathererInstance} */
 class Stacks extends FRGatherer {
-  constructor() {
-    super();
+  /** @type {LH.Gatherer.GathererMeta<'DevtoolsLog'>} */
+  meta = {
+    supportedModes: ['navigation'],
+    dependencies: {DevtoolsLog: DevtoolsLog.symbol},
+  };
 
-    /** @type {LH.Gatherer.GathererMeta} */
-    this.meta = {
-      supportedModes: ['snapshot', 'navigation'],
-    };
+  /**
+   * @param {LH.Artifacts['DevtoolsLog']} devtoolsLog
+   * @return {LH.Crdp.Network.Headers}
+   */
+  static getDocumentHeaders(devtoolsLog) {
+    for (const entry of devtoolsLog) {
+      if (entry.method !== 'Network.responseReceived') continue;
+      if (entry.params.type !== 'Document') continue;
+      return entry.params.response.headers;
+    }
+    return {};
   }
 
   /**
    * @param {LH.Gatherer.FRTransitionalDriver['executionContext']} executionContext
+   * @param {LH.Artifacts['DevtoolsLog']} devtoolsLog
    * @return {Promise<LH.Artifacts['Stacks']>}
    */
-  static async collectStacks(executionContext) {
+  static async collectStacks(executionContext, devtoolsLog) {
     const status = {msg: 'Collect stacks', id: 'lh:gather:collectStacks'};
     log.time(status);
 
@@ -117,17 +162,25 @@ class Stacks extends FRGatherer {
       version: typeof lib.version === 'number' ? String(lib.version) : (lib.version || undefined),
       npm: lib.npm || undefined,
     }));
+
+    const detectedServer = detectServer(Stacks.getDocumentHeaders(devtoolsLog));
+    if (detectedServer) {
+      stacks.push(detectedServer);
+    }
     log.timeEnd(status);
     return stacks;
   }
 
   /**
-   * @param {LH.Gatherer.FRTransitionalContext} context
+   * @param {LH.Gatherer.FRTransitionalContext<'DevtoolsLog'>} context
    * @return {Promise<LH.Artifacts['Stacks']>}
    */
   async getArtifact(context) {
     try {
-      return await Stacks.collectStacks(context.driver.executionContext);
+      return await Stacks.collectStacks(
+        context.driver.executionContext,
+        context.dependencies.DevtoolsLog
+      );
     } catch {
       return [];
     }

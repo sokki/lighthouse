@@ -762,7 +762,7 @@ declare module Artifacts {
   /** Information on a tech stack (e.g. a JS library) used by the page. */
   interface DetectedStack {
     /** The identifier for how this stack was detected. */
-    detector: 'js';
+    detector: 'js' | 'server';
     /** The unique string ID for the stack. */
     id: string;
     /** The name of the stack. */
